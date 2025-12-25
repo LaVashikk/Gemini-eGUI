@@ -17,8 +17,7 @@ use egui_virtual_list::VirtualList;
 use flowync::{error::Compact, CompactFlower, CompactHandle};
 use futures_util::TryStreamExt;
 use gemini_rust::{
-    Gemini, GenerationConfig, HarmBlockThreshold, HarmCategory, Part,
-    SafetySetting, UsageMetadata,
+    Gemini, GenerationConfig, HarmBlockThreshold, HarmCategory, Part, SafetySetting, UsageMetadata,
 };
 use std::{
     io::Write,
@@ -519,8 +518,6 @@ impl Default for Chat {
     }
 }
 
-
-
 async fn request_completion(
     gemini: Gemini,
     messages: Vec<Message>,
@@ -680,13 +677,13 @@ async fn request_completion_code_assist(
         messages.len()
     );
 
-    let dummy_client = Gemini::new("")?; 
+    let dummy_client = Gemini::new("")?;
 
     let history = crate::chat_completion::build_history(
         &dummy_client,
         &messages,
         None,
-        false, 
+        false,
         Some((index, handle)),
     )
     .await?;
@@ -776,7 +773,6 @@ async fn request_completion_code_assist(
     handle.success((index, response_text, final_usage));
     Ok(())
 }
-
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum ChatExportFormat {
@@ -982,13 +978,18 @@ impl Chat {
                 }
                 crate::widgets::AuthMethod::CodeAssist => {
                     if oauth_token.is_empty() || project_id.is_empty() {
-                        handle.error((index, "OAuth token or Project ID not set. Please login in settings.".to_string()));
+                        handle.error((
+                            index,
+                            "OAuth token or Project ID not set. Please login in settings."
+                                .to_string(),
+                        ));
                         return;
                     }
 
-                    let mut client = gemini_code_assist_adapter::CodeAssistClient::new(oauth_token, project_id)
-                        .with_model(model_picker.selected.to_string());
-                    
+                    let mut client =
+                        gemini_code_assist_adapter::CodeAssistClient::new(oauth_token, project_id)
+                            .with_model(model_picker.selected.to_string());
+
                     // Handshake
                     match client.load_code_assist().await {
                         Ok(effective_proj) => {
@@ -1009,7 +1010,9 @@ impl Chat {
                         index,
                         use_streaming,
                         generation_config,
-                    ).await.map_err(|e| {
+                    )
+                    .await
+                    .map_err(|e| {
                         log::error!("failed to request completion via Code Assist: {e}");
                         handle.error((index, e.to_string()));
                     });
@@ -1235,31 +1238,31 @@ impl Chat {
                                 let message = err_obj.get("message").and_then(|v| v.as_str()).unwrap_or("No message");
 
                                 match status {
-                                "RESOURCE_EXHAUSTED" => {
-                                    let retry_info = if message.contains("retry in ") {
-                                        if let Some(pos) = message.find("retry in ") {
-                                            format!("\n\n⏳ **Suggestion:** {}", &message[pos..])
+                                    "RESOURCE_EXHAUSTED" => {
+                                        let retry_info = if message.contains("retry in ") {
+                                            if let Some(pos) = message.find("retry in ") {
+                                                format!("\n\n⏳ **Suggestion:** {}", &message[pos..])
+                                            } else {
+                                                String::new()
+                                            }
                                         } else {
                                             String::new()
-                                        }
-                                    } else {
-                                        String::new()
-                                    };
-                                    
-                                    format!("🛑 **Quota Exhausted (429)**\n\nYou've hit the Gemini API rate limit. Please wait a bit or check your Google AI Studio quota.{}", retry_info)
-                                },                                                                    "NOT_FOUND" => {
-                                    format!("🚫 **Model Not Found (404)**\n\nThe model you selected is either not found or not supported for this operation. Try choosing a different model.\n\n**Details:** {}", message)
-                                },
-                                "PERMISSION_DENIED" => {
-                                    format!("🔒 **Permission Denied (403)**\n\nCheck your API Key and project permissions. Make sure the Key is valid for the selected region.\n\n**Details:** {}", message)
-                                },
-                                "INVALID_ARGUMENT" => {
-                                    format!("❌ **Invalid Request (400)**\n\nSomething is wrong with the request parameters.\n\n**Details:** {}", message)
-                                },
-                                _ => format!("❗ **Gemini API Error ({})**\n\n**Status:** {}\n**Message:** {}", code, status, message)
-                            }                            } else {
-                                serde_json::to_string_pretty(&json).unwrap_or_else(|_| msg.clone())
-                            }
+                                        };
+
+                                        format!("🛑 **Quota Exhausted (429)**\n\nYou've hit the Gemini API rate limit. Please wait a bit or check your Google AI Studio quota.{}", retry_info)
+                                    },                                                                    "NOT_FOUND" => {
+                                        format!("🚫 **Model Not Found (404)**\n\nThe model you selected is either not found or not supported for this operation. Try choosing a different model.\n\n**Details:** {}", message)
+                                    },
+                                    "PERMISSION_DENIED" => {
+                                        format!("🔒 **Permission Denied (403)**\n\nCheck your API Key and project permissions. Make sure the Key is valid for the selected region.\n\n**Details:** {}", message)
+                                    },
+                                    "INVALID_ARGUMENT" => {
+                                        format!("❌ **Invalid Request (400)**\n\nSomething is wrong with the request parameters.\n\n**Details:** {}", message)
+                                    },
+                                    _ => format!("❗ **Gemini API Error ({})**\n\n**Status:** {}\n**Message:** {}", code, status, message)
+                                }                            } else {
+                                    serde_json::to_string_pretty(&json).unwrap_or_else(|_| msg.clone())
+                                }
                         } else {
                             msg.clone()
                         }
@@ -1399,7 +1402,7 @@ impl Chat {
                     }
                 }
 
-                ui.add_space(12.0); 
+                ui.add_space(12.0);
             });
         if let Some(regenerate_idx) = regenerate_response_idx {
             self.regenerate_response(settings, regenerate_idx);

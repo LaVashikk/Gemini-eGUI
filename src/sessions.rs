@@ -35,10 +35,19 @@ pub type SharedTts = Option<Arc<RwLock<Tts>>>;
 enum BackendResponse {
     Ignore,
     Toast(Toast),
-    Files { id: usize, files: Vec<PathBuf> },
+    Files {
+        id: usize,
+        files: Vec<PathBuf>,
+    },
     Settings(Box<Settings>),
-    TokenCount { chat_id: usize, count: u32 },
-    AuthResult { token: String, projects: Vec<String> },
+    TokenCount {
+        chat_id: usize,
+        count: u32,
+    },
+    AuthResult {
+        token: String,
+        projects: Vec<String>,
+    },
 }
 
 // <progress, response, error>
@@ -100,7 +109,9 @@ impl Sessions {
         if let Some(path) = Self::get_autosave_path() {
             if path.exists() {
                 if let Ok(file) = std::fs::File::open(&path) {
-                    if let Ok((chats, selected_chat)) = serde_json::from_reader::<_, (Vec<Chat>, usize)>(file) {
+                    if let Ok((chats, selected_chat)) =
+                        serde_json::from_reader::<_, (Vec<Chat>, usize)>(file)
+                    {
                         log::info!("Restored {} chats from autosave.json", chats.len());
                         self.chats = chats;
                         self.selected_chat = selected_chat;
@@ -161,18 +172,22 @@ async fn login_google(handle: &BackendFlowerHandle) {
     let auth_manager = GoogleAuthManager::new();
 
     match auth_manager.login().await {
-        Ok(token) => {
-            match auth_manager.list_projects(&token).await {
-                Ok(projects) => {
-                    handle.success(BackendResponse::AuthResult { token, projects });
-                }
-                Err(e) => {
-                    log::error!("failed to list projects: {e}");
-                    handle.success(BackendResponse::Toast(Toast::error(format!("Logged in, but failed to list projects: {}", e))));
-                    handle.success(BackendResponse::AuthResult { token, projects: Vec::new() });
-                }
+        Ok(token) => match auth_manager.list_projects(&token).await {
+            Ok(projects) => {
+                handle.success(BackendResponse::AuthResult { token, projects });
             }
-        }
+            Err(e) => {
+                log::error!("failed to list projects: {e}");
+                handle.success(BackendResponse::Toast(Toast::error(format!(
+                    "Logged in, but failed to list projects: {}",
+                    e
+                ))));
+                handle.success(BackendResponse::AuthResult {
+                    token,
+                    projects: Vec::new(),
+                });
+            }
+        },
         Err(e) => {
             log::error!("failed to login: {e}");
             handle.error(format!("Login failed: {}", e));
@@ -292,7 +307,6 @@ impl Sessions {
         //     .size(0.5..=2.0)
         //     .show(ctx);
 
-
         // if speaking, continuously check if stopped
         #[cfg(feature = "tts")]
         let mut request_repaint = self.is_speaking;
@@ -339,7 +353,11 @@ impl Sessions {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui
-                    .button(if self.left_panel_visible { "◀" } else { "▶" })
+                    .button(if self.left_panel_visible {
+                        "◀"
+                    } else {
+                        "▶"
+                    })
                     .on_hover_text("Toggle Sidebar")
                     .clicked()
                 {
@@ -375,13 +393,13 @@ impl Sessions {
                 .max_width(avail_width * 0.5)
                 .show(ctx, |ui| {
                     self.show_left_panel(ui);
-                                    ui.allocate_space(ui.available_size());
-                                });
-                            }
+                    ui.allocate_space(ui.available_size());
+                });
+        }
 
-                            if request_repaint {
-                                ctx.request_repaint();
-                            }
+        if request_repaint {
+            ctx.request_repaint();
+        }
         if self.settings_open {
             self.edited_chat = None;
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -423,7 +441,8 @@ impl Sessions {
                         self.settings.oauth_token.clear();
                         self.settings.project_id.clear();
                         self.settings.available_projects.clear();
-                        self.toasts.add(Toast::info("Logged out and cache cleared."));
+                        self.toasts
+                            .add(Toast::info("Logged out and cache cleared."));
                     }
                 });
             });
@@ -741,7 +760,9 @@ impl Sessions {
                 Ok(BackendResponse::AuthResult { token, projects }) => {
                     self.settings.oauth_token = token;
                     self.settings.available_projects = projects;
-                    if self.settings.project_id.is_empty() && !self.settings.available_projects.is_empty() {
+                    if self.settings.project_id.is_empty()
+                        && !self.settings.available_projects.is_empty()
+                    {
                         self.settings.project_id = self.settings.available_projects[0].clone();
                     }
                     self.toasts.add(Toast::success("Google Login successful!"));

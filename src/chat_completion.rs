@@ -1,7 +1,7 @@
+use crate::chat::{ChatProgress, CompletionFlowerHandle, Message, MessageRole};
+use crate::file_handler::{convert_file_to_part, Attachment, AttachmentState, FileResult};
 use anyhow::Result;
-use gemini_rust::{Content, Gemini, Part, Role, FileData};
-use crate::chat::{Message, MessageRole, ChatProgress, CompletionFlowerHandle};
-use crate::file_handler::{Attachment, AttachmentState, FileResult, convert_file_to_part};
+use gemini_rust::{Content, FileData, Gemini, Part, Role};
 
 pub async fn build_history(
     gemini: &Gemini,
@@ -46,7 +46,8 @@ pub async fn build_history(
             public_file_upload,
             status_channel,
             msg_idx,
-        ).await;
+        )
+        .await;
 
         if !message.content.is_empty() {
             parts_buffer.push(Part::Text {
@@ -76,7 +77,8 @@ pub async fn build_history(
             false, // Don't upload extra content files (usually local for preview/counting)
             None,  // No status updates for extra content (usually used for counting)
             0,     // Index irrelevant when status_channel is None
-        ).await;
+        )
+        .await;
 
         if !text.is_empty() {
             extra_parts.push(Part::Text {
@@ -93,10 +95,10 @@ pub async fn build_history(
             });
         }
     }
-    
+
     // Clear status message if we have a handle
     if let Some((index, h)) = status_channel {
-         h.send((
+        h.send((
             index,
             ChatProgress::Status {
                 message: String::new(),

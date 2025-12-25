@@ -267,7 +267,13 @@ pub fn show_files(ui: &mut egui::Ui, files: &mut Vec<Attachment>, mutate: bool) 
 
         let is_exist = file_path.exists();
         let frame_color = match file.state {
-            AttachmentState::Local => if is_exist { egui::Color32::GRAY } else { egui::Color32::from_rgb(201, 178, 141) },
+            AttachmentState::Local => {
+                if is_exist {
+                    egui::Color32::GRAY
+                } else {
+                    egui::Color32::from_rgb(201, 178, 141)
+                }
+            }
             AttachmentState::Uploading => egui::Color32::from_rgb(141, 164, 201),
             AttachmentState::Uploaded(_) => egui::Color32::from_rgb(141, 189, 156),
             AttachmentState::Failed(_) => egui::Color32::from_rgb(201, 141, 141),
@@ -322,8 +328,8 @@ pub fn show_files(ui: &mut egui::Ui, files: &mut Vec<Attachment>, mutate: bool) 
                     ui.add(egui::Label::new(RichText::new(text).small()).truncate());
 
                     if let AttachmentState::Failed(err) = &file.state {
-                         ui.colored_label(Color32::RED, "Failed");
-                         ui.label(RichText::new(err).small().color(Color32::RED));
+                        ui.colored_label(Color32::RED, "Failed");
+                        ui.label(RichText::new(err).small().color(Color32::RED));
                     } else if matches!(file.state, AttachmentState::Uploading) {
                         ui.horizontal(|ui| {
                             ui.spinner();

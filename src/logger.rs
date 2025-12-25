@@ -28,13 +28,13 @@ impl log::Log for GlobalLogger {
         if record.level() <= Level::Warn {
             // We format the message immediately.
             let msg = format!("{}", record.args());
-            
+
             // Send to the channel
             if let Ok(sender) = self.sender.lock() {
-                 let _ = sender.send(LogEvent {
-                     level: record.level(),
-                     message: msg,
-                 });
+                let _ = sender.send(LogEvent {
+                    level: record.level(),
+                    message: msg,
+                });
             }
         }
     }
@@ -46,7 +46,7 @@ impl log::Log for GlobalLogger {
 
 pub fn init() -> Result<(), SetLoggerError> {
     let (tx, rx) = mpsc::channel();
-    
+
     // Store the receiver globally so the UI can access it later
     if LOG_RECEIVER.set(Mutex::new(rx)).is_err() {
         eprintln!("Logger already initialized");

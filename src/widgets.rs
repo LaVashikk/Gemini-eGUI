@@ -131,7 +131,7 @@ impl fmt::Display for GeminiModel {
         write!(
             f,
             "{}",
-            serde_json::to_string(self) 
+            serde_json::to_string(self)
                 .expect("Failed to serialize model")
                 .trim_matches('"')
         )
@@ -684,7 +684,10 @@ impl Settings {
                         })
                         .show_ui(ui, |ui| {
                             for proj in &self.available_projects {
-                                if ui.selectable_label(self.project_id == *proj, proj).clicked() {
+                                if ui
+                                    .selectable_label(self.project_id == *proj, proj)
+                                    .clicked()
+                                {
                                     request_info(RequestInfoType::SelectProject(proj.clone()));
                                 }
                             }
