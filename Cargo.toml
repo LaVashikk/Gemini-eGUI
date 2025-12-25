@@ -60,7 +60,7 @@ base64-stream = "4.0"
 url = "2"
 openssl = { version = "0.10.73", features = ["vendored"] }
 gemini-rust = { git = "https://github.com/LaVashikk/gemini-rust-pr.git" } 
-gemini-client-api = { git = "https://github.com/LaVashikk/llms-client" }
+gemini-code-assist-adapter = { path = "./gemini-code-assist-adapter" }
 mime_guess = "2.0.5"
 base64 = "0.22.1"
 enum-iterator = "2.1.0"

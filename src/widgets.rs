@@ -631,21 +631,69 @@ impl Settings {
     where
         R: FnMut(RequestInfoType),
     {
-        ui.heading("Gemini API");
-        ui.label("Connection settings");
-        egui::Grid::new("settings_grid")
-            .num_columns(2)
-            .striped(true)
-            .min_row_height(32.0)
-            .show(ui, |ui| {
-                ui.label("API Key");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.api_key)
-                        .password(true)
-                        .hint_text("Enter your Google AI Studio API Key"),
+        ui.heading("Authentication");
+        egui::ComboBox::from_label("Method")
+            .selected_text(self.auth_method.to_string())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.auth_method, AuthMethod::ApiKey, "API Key");
+                ui.selectable_value(
+                    &mut self.auth_method,
+                    AuthMethod::CodeAssist,
+                    "Google Code Assist",
                 );
-                ui.end_row();
             });
+
+        ui.add_space(4.0);
+
+        match self.auth_method {
+            AuthMethod::ApiKey => {
+                egui::Grid::new("settings_grid_api")
+                    .num_columns(2)
+                    .striped(true)
+                    .min_row_height(32.0)
+                    .show(ui, |ui| {
+                        ui.label("API Key");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.api_key)
+                                .password(true)
+                                .hint_text("Enter your Google AI Studio API Key"),
+                        );
+                        ui.end_row();
+                    });
+            }
+            AuthMethod::CodeAssist => {
+                ui.horizontal(|ui| {
+                    if ui.button("🔑 Login with Google").clicked() {
+                        request_info(RequestInfoType::LoginGoogle);
+                    }
+                    if !self.oauth_token.is_empty() {
+                        ui.label("✅ Logged in");
+                        if ui.button("🚪 Logout").clicked() {
+                            request_info(RequestInfoType::LogoutGoogle);
+                        }
+                    }
+                });
+
+                if !self.available_projects.is_empty() {
+                    ui.add_space(4.0);
+                    egui::ComboBox::from_label("Project")
+                        .selected_text(if self.project_id.is_empty() {
+                            "Select Project"
+                        } else {
+                            &self.project_id
+                        })
+                        .show_ui(ui, |ui| {
+                            for proj in &self.available_projects {
+                                if ui.selectable_label(self.project_id == *proj, proj).clicked() {
+                                    request_info(RequestInfoType::SelectProject(proj.clone()));
+                                }
+                            }
+                        });
+                } else if !self.oauth_token.is_empty() {
+                    ui.label("No projects found or loading...");
+                }
+            }
+        }
 
         ui.separator();
 

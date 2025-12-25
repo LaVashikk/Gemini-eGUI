@@ -1,0 +1,20 @@
+[package]
+name = "gemini-code-assist-adapter"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gemini-rust = { git = "https://github.com/LaVashikk/gemini-rust-pr.git" } 
+
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["fs", "full"] }
+futures = "0.3"
+eventsource-stream = "0.2"
+thiserror = "1.0"
+log = "0.4"
+yup-oauth2 = "9.0"
+directories = "5.0"
+open = "5.3"
+uuid = { version = "1.19.0", features = ["v4"] }

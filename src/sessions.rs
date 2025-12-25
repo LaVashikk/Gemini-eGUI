@@ -37,6 +37,8 @@ enum BackendResponse {
     Toast(Toast),
     Files { id: usize, files: Vec<PathBuf> },
     Settings(Box<Settings>),
+    TokenCount { chat_id: usize, count: u32 },
+    AuthResult { token: String, projects: Vec<String> },
 }
 
 // <progress, response, error>
@@ -153,6 +155,27 @@ impl Default for Sessions {
     }
 }
 
+async fn login_google(handle: &BackendFlowerHandle) {
+    use gemini_code_assist_adapter::auth::GoogleAuthManager;
+
+    let auth_manager = GoogleAuthManager::new();
+
+    match auth_manager.login().await {
+        Ok(token) => {
+            match auth_manager.list_projects(&token).await {
+                Ok(projects) => {
+                    handle.success(BackendResponse::AuthResult { token, projects });
+                }
+                Err(e) => {
+                    log::error!("failed to list projects: {e}");
+                    handle.success(BackendResponse::Toast(Toast::error(format!("Logged in, but failed to list projects: {}", e))));
+                    handle.success(BackendResponse::AuthResult { token, projects: Vec::new() });
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("failed to login: {e}");
+            handle.error(format!("Login failed: {}", e));
         }
     }
 }
