@@ -1,5 +1,6 @@
 use crate::{
     chat::{Chat, ChatAction, ChatExportFormat},
+    file_handler::Attachment,
     widgets::{ModelPicker, RequestInfoType, Settings},
 };
 use eframe::egui::{self, vec2, Color32, CornerRadius, Frame, Layout, Stroke};
@@ -13,7 +14,13 @@ use flowync::{CompactFlower, CompactHandle};
 use parking_lot::RwLock;
 #[cfg(feature = "tts")]
 use std::sync::Arc;
-use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 #[cfg(feature = "tts")]
 use tts::Tts;
 
@@ -64,6 +71,53 @@ pub struct Sessions {
     toasts: Toasts,
     settings_open: bool,
     pub settings: Settings,
+    #[serde(default = "default_true")]
+    left_panel_visible: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Sessions {
+    fn get_autosave_path() -> Option<PathBuf> {
+        eframe::storage_dir(crate::TITLE).map(|p| p.join("autosave.json"))
+    }
+
+    pub fn save_autosave(&self) {
+        if let Some(path) = Self::get_autosave_path() {
+            if let Ok(file) = std::fs::File::create(path) {
+                if let Err(e) = serde_json::to_writer(file, &(&self.chats, self.selected_chat)) {
+                    log::error!("Failed to write autosave.json: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn try_restore_autosave(&mut self) -> bool {
+        if let Some(path) = Self::get_autosave_path() {
+            if path.exists() {
+                if let Ok(file) = std::fs::File::open(&path) {
+                    if let Ok((chats, selected_chat)) = serde_json::from_reader::<_, (Vec<Chat>, usize)>(file) {
+                        log::info!("Restored {} chats from autosave.json", chats.len());
+                        self.chats = chats;
+                        self.selected_chat = selected_chat;
+
+                        // Ensure selected_chat is valid
+                        if self.selected_chat >= self.chats.len() {
+                            self.selected_chat = 0;
+                        }
+
+                        log::warn!("Restored chats from autosave backup");
+                        return true;
+                    } else {
+                        log::error!("Failed to deserialize autosave.json");
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 impl Default for Sessions {
@@ -94,6 +148,11 @@ impl Default for Sessions {
             toasts: Toasts::default(),
             settings_open: false,
             settings: Settings::default(),
+            left_panel_visible: true,
+        }
+    }
+}
+
         }
     }
 }
@@ -204,6 +263,13 @@ impl Sessions {
             };
         }
 
+        // egui_snow::Snow::new("snow_effect") // todo
+        //     .color(egui::Color32::from_white_alpha(200))
+        //     .speed(40.0..=100.0)
+        //     .size(0.5..=2.0)
+        //     .show(ctx);
+
+
         // if speaking, continuously check if stopped
         #[cfg(feature = "tts")]
         let mut request_repaint = self.is_speaking;
@@ -211,23 +277,24 @@ impl Sessions {
         #[cfg(not(feature = "tts"))]
         let mut request_repaint = false;
 
+        // Poll logs and show them as toasts
+        for log in crate::logger::pop_logs() {
+            match log.level {
+                log::Level::Error => {
+                    self.toasts.add(Toast::error(log.message));
+                }
+                log::Level::Warn => {
+                    self.toasts.add(Toast::warning(log.message));
+                }
+                _ => {} // Info/Debug/Trace are ignored by the logger for the channel now
+            }
+            request_repaint = true;
+        }
+
         let mut modal = Modal::new(ctx, "sessions_main_modal");
         let mut chat_modal = Modal::new(ctx, "chat_main_modal").with_close_on_outside_click(true);
         let settings_modal =
             Modal::new(ctx, "global_settings_modal").with_close_on_outside_click(true);
-
-        chat_modal.show_dialog();
-        modal.show_dialog();
-        self.settings.show_modal(&settings_modal);
-
-        let avail_width = ctx.available_rect().width();
-        egui::SidePanel::left("sessions_panel")
-            .resizable(true)
-            .max_width(avail_width * 0.5)
-            .show(ctx, |ui| {
-                self.show_left_panel(ui);
-                ui.allocate_space(ui.available_size());
-            });
 
         // poll all flowers
         for chat in self.chats.iter_mut() {
@@ -241,14 +308,63 @@ impl Sessions {
             self.poll_backend_flower(&modal);
         }
 
-        if request_repaint {
-            ctx.request_repaint();
-        }
+        chat_modal.show_dialog();
+        modal.show_dialog();
+        self.settings.show_modal(&settings_modal);
 
+        // Top bar for global controls
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button(if self.left_panel_visible { "◀" } else { "▶" })
+                    .on_hover_text("Toggle Sidebar")
+                    .clicked()
+                {
+                    self.left_panel_visible = !self.left_panel_visible;
+                }
+
+                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .toggle_value(&mut self.settings_open, "⚙")
+                        .on_hover_text("Settings")
+                        .clicked()
+                    {
+                        if self.settings_open {
+                            self.edited_chat = None;
+                        }
+                    }
+
+                    if let Some(chat) = self.chats.get(self.selected_chat) {
+                        if let Some(count) = chat.token_count {
+                            ui.label(format!("{} tokens", count))
+                                .on_hover_text("Estimated total tokens in context");
+                            ui.separator();
+                        }
+                    }
+                });
+            });
+        });
+
+        if self.left_panel_visible {
+            let avail_width = ctx.available_rect().width();
+            egui::SidePanel::left("sessions_panel")
+                .resizable(true)
+                .max_width(avail_width * 0.5)
+                .show(ctx, |ui| {
+                    self.show_left_panel(ui);
+                                    ui.allocate_space(ui.available_size());
+                                });
+                            }
+
+                            if request_repaint {
+                                ctx.request_repaint();
+                            }
         if self.settings_open {
             self.edited_chat = None;
             egui::CentralPanel::default().show(ctx, |ui| {
                 egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+                    let mut selected_project = None;
+                    let mut should_logout = false;
                     self.settings.show(
                         ui,
                         &mut |typ| match typ {
@@ -259,9 +375,33 @@ impl Sessions {
                                     load_settings(&handle).await;
                                 });
                             }
+                            RequestInfoType::LoginGoogle => {
+                                let handle = self.flower.handle();
+                                tokio::spawn(async move {
+                                    handle.activate();
+                                    login_google(&handle).await;
+                                });
+                            }
+                            RequestInfoType::LogoutGoogle => {
+                                should_logout = true;
+                            }
+                            RequestInfoType::SelectProject(proj) => {
+                                selected_project = Some(proj);
+                            }
                         },
                         &settings_modal,
                     );
+                    if let Some(proj) = selected_project {
+                        self.settings.project_id = proj;
+                    }
+                    if should_logout {
+                        use gemini_code_assist_adapter::auth::GoogleAuthManager;
+                        GoogleAuthManager::new().clear_token_cache();
+                        self.settings.oauth_token.clear();
+                        self.settings.project_id.clear();
+                        self.settings.available_projects.clear();
+                        self.toasts.add(Toast::info("Logged out and cache cleared."));
+                    }
                 });
             });
         } else if let Some(edited_chat) = self.edited_chat {
@@ -277,6 +417,67 @@ impl Sessions {
                 (prev_is_speaking && !self.is_speaking),
             );
             preview_files_being_dropped(ctx);
+        }
+
+        // Token counting logic
+        if let Some(chat) = self.chats.get_mut(self.selected_chat) {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            chat.chatbox.hash(&mut hasher);
+            for msg in &chat.messages {
+                msg.content.hash(&mut hasher);
+                for f in &msg.files {
+                    f.path.hash(&mut hasher);
+                }
+            }
+            for f in &chat.files {
+                f.path.hash(&mut hasher);
+            }
+            let current_hash = hasher.finish();
+
+            let should_update = chat.last_content_hash != current_hash
+                && chat
+                    .last_token_check
+                    .map_or(true, |t| t.elapsed() > Duration::from_secs(1));
+
+            if should_update {
+                chat.last_content_hash = current_hash;
+                chat.last_token_check = Some(Instant::now());
+
+                let chat_id = chat.id();
+                let messages = chat.messages.clone();
+                let chatbox = chat.chatbox.clone();
+                let files = chat.files.clone();
+                let handle = self.flower.handle();
+                let settings = self.settings.clone();
+
+                tokio::spawn(async move {
+                    if let Ok(client) = settings
+                        .model_picker
+                        .create_client(&settings.api_key, settings.proxy_path)
+                    {
+                        if let Ok(contents) = crate::chat_completion::build_history(
+                            &client,
+                            &messages,
+                            Some((&chatbox, &files)),
+                            false,
+                            None,
+                        )
+                        .await
+                        {
+                            let mut builder = client.generate_content();
+                            builder.contents.extend(contents);
+
+                            if let Ok(resp) = builder.count_tokens().await {
+                                handle.activate();
+                                handle.success(BackendResponse::TokenCount {
+                                    chat_id,
+                                    count: resp.total_tokens,
+                                });
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         // display toast queue
@@ -324,7 +525,7 @@ impl Sessions {
                         )));
                         continue;
                     }
-                    chat.files.push(path.clone());
+                    chat.files.push(Attachment::from_path(path.clone()));
                 }
             }
         });
@@ -390,13 +591,12 @@ impl Sessions {
 
     fn show_chat_edit_panel(&mut self, ui: &mut egui::Ui, chat_idx: usize) {
         ui.horizontal(|ui| {
-            let Some(chat) = self.chats.get(chat_idx) else {
-                return;
-            };
-            if chat.summary.is_empty() {
-                ui.heading("Editing Chat \"New Chat\"");
-            } else {
-                ui.heading(format!("Editing Chat \"{}\"", chat.summary));
+            if let Some(chat) = self.chats.get_mut(chat_idx) {
+                ui.add(
+                    egui::TextEdit::singleline(&mut chat.summary)
+                        .hint_text("New Chat")
+                        .desired_width(f32::INFINITY),
+                );
             }
 
             ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
@@ -473,10 +673,6 @@ impl Sessions {
         ui.add_space(ui.style().spacing.window_margin.top as _);
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.tab, SessionTab::Chats, "Chats");
-            ui.with_layout(Layout::right_to_left(egui::Align::Max), |ui| {
-                ui.toggle_value(&mut self.settings_open, "⚙")
-                    .on_hover_text("Settings");
-            });
         });
 
         ui.add_space(8.0);
@@ -507,11 +703,25 @@ impl Sessions {
                 Ok(BackendResponse::Files { id, files }) => {
                     if let Some(chat) = self.chats.iter_mut().find(|c| c.id() == id) {
                         log::debug!("adding {} file(s) to chat {}", files.len(), id);
-                        chat.files.extend(files);
+                        chat.files
+                            .extend(files.into_iter().map(Attachment::from_path));
                     }
                 }
                 Ok(BackendResponse::Settings(settings)) => {
                     self.settings = *settings;
+                }
+                Ok(BackendResponse::TokenCount { chat_id, count }) => {
+                    if let Some(chat) = self.chats.iter_mut().find(|c| c.id() == chat_id) {
+                        chat.token_count = Some(count);
+                    }
+                }
+                Ok(BackendResponse::AuthResult { token, projects }) => {
+                    self.settings.oauth_token = token;
+                    self.settings.available_projects = projects;
+                    if self.settings.project_id.is_empty() && !self.settings.available_projects.is_empty() {
+                        self.settings.project_id = self.settings.available_projects[0].clone();
+                    }
+                    self.toasts.add(Toast::success("Google Login successful!"));
                 }
                 Err(flowync::error::Compact::Suppose(e)) => {
                     modal

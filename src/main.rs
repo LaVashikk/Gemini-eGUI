@@ -4,8 +4,10 @@
 use eframe::egui;
 use sessions::Sessions;
 mod chat;
+mod chat_completion;
 mod easymark;
 mod file_handler;
+mod logger;
 mod sessions;
 mod style;
 mod widgets;
@@ -44,7 +46,7 @@ fn load_icon() -> egui::IconData {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    logger::init().expect("failed to initialize logger");
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_icon(load_icon()),
         ..Default::default()
@@ -64,11 +66,9 @@ struct Ellama {
 
 impl Ellama {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // change visuals
         style::set_style(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
-        // try to restore app
         log::debug!(
             "trying to restore app state from storage: {:?}",
             eframe::storage_dir(TITLE)
@@ -76,15 +76,19 @@ impl Ellama {
 
         if let Some(storage) = cc.storage {
             if let Some(app_state) = eframe::get_value::<Self>(storage, eframe::APP_KEY) {
-                log::debug!("app state successfully restored from storage");
+                log::info!("app state successfully restored from storage");
                 return app_state;
             }
         }
 
-        log::debug!("app state is not saved in storage, using default app state");
+        log::error!("app state is not saved in storage. This is a bug!");
 
-        // default app
-        Self::default()
+        let mut app = Self::default();
+        if app.sessions.try_restore_autosave() {
+            log::info!("Disaster recovery successful.");
+        }
+
+        app
     }
 }
 
@@ -97,5 +101,6 @@ impl eframe::App for Ellama {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         log::debug!("saving app state");
         eframe::set_value(storage, eframe::APP_KEY, self);
+        self.sessions.save_autosave();
     }
 }
